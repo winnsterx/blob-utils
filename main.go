@@ -19,8 +19,10 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/holiman/uint256"
 
+	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	"github.com/urfave/cli"
 )
+
 
 func main() {
 	app := cli.NewApp()
@@ -127,10 +129,134 @@ func TxApp(cliCtx *cli.Context) error {
 		return fmt.Errorf("%w: invalid max_fee_per_blob_gas", err)
 	}
 
-	blobs, commitments, proofs, versionedHashes, err := EncodeBlobs(data)
+	// ensure data is a multiple of 32 bytes
+	if len(data)%32 != 0 {
+		// first just print something if its not
+		// fmt.Printf("data is not a multiple of 32 bytes: %d\n", len(data))
+		data = append(data, make([]byte, 32-len(data)%32)...)
+	}
+
+	// ensure data is a multiple of 32 bytes
+	if len(data)%32 != 0 {
+		// first just print something if its not
+		fmt.Printf("data is still not a multiple of 32 bytes: %d\n", len(data))
+		// data = append(data, make([]byte, 32 - len(data) % 32)...)
+	}
+
+	newData := make([]byte, len(data))
+	// loop through all 32 byte chunks, seeing which one fails this:
+	// v, err := BigEndian.Element((*[Bytes]byte)(e))
+	// if err != nil {
+	// 	return err
+	// }
+	for i := 0; i < len(data); i += 32 {
+		piece := data[i : i+32]
+		_, err := fr.BigEndian.Element((*[fr.Bytes]byte)(piece))
+		if err != nil {
+			// print utf 8 string
+			// fmt.Printf("error parsing blob data: %v, %s\n", err, string(piece))
+
+			// get the modulus
+			modulus := fr.Modulus()
+
+			// cut off the end of the data until it is lower than the modulus
+			for j := 32; j >= 0; j-- {
+				cutOff := piece[:j]
+
+				// print cutOff bigint num
+				intCutOff := new(big.Int).SetBytes(cutOff)
+				// fmt.Printf("cutOff: %v\n", intCutOff)
+				// fmt.Printf("modulus: %v\n", modulus)
+
+				// if this new cut off is less than the modulus, use it
+				if intCutOff.Cmp(modulus) == -1 {
+					// fmt.Printf("using cutOff: %v\n", intCutOff)
+					// left pad the cut off with 0s
+					cutOff = append(make([]byte, 32-len(cutOff)), cutOff...)
+					piece = cutOff
+					i += j - 32
+					// fmt.Printf("using cutOff: %v\n", string(piece))
+					// fmt.Printf("what is the next piece: %v\n", string(data[i:i+32]))
+
+					break
+				}
+			}
+
+			// print utf 8 string
+			fmt.Printf("error+- parsing blob data: %s\n", string(piece))
+
+			// modify the data to be below the modulus, so it is as similar to
+			// utf8 as possible
+
+			// return fmt.Errorf("error parsing blob data: %v, %x", err, data[i:i+32])
+		} else {
+
+			// print utf 8 string
+			fmt.Printf("success parsing blob data: %s\n", string(piece))
+		}
+
+		newData = append(newData, piece...)
+	}
+
+	// ensure data is a multiple of 32 bytes
+	if len(newData)%32 != 0 {
+		// first just print something if its not
+		// fmt.Printf("data is not a multiple of 32 bytes: %d\n", len(data))
+		newData = append(newData, make([]byte, 32-len(newData)%32)...)
+	}
+
+	// ensure data is a multiple of 32 bytes
+	if len(newData)%32 != 0 {
+		// first just print something if its not
+		fmt.Printf("data is still not a multiple of 32 bytes: %d\n", len(newData))
+		// data = append(data, make([]byte, 32 - len(data) % 32)...)
+	}
+
+	data = newData
+	for i := 0; i < len(data); i += 32 {
+		piece := data[i : i+32]
+		_, err := fr.BigEndian.Element((*[fr.Bytes]byte)(piece))
+		if err != nil {
+			// print utf 8 string
+			fmt.Printf("error parsing blob data: %v, %s\n", err, string(piece))
+		}
+	}
+
+	// put each 32 byte chunk into a blob
+	blob := gethkzg4844.Blob{}
+	for i := 0; i < len(data); i += 32 {
+		piece := data[i : i+32]
+		// do not copy all zeros
+		if bytes.Equal(piece, make([]byte, 32)) {
+			continue
+		}
+		copy(blob[i:], piece)
+	}
+
+	blobs := []gethkzg4844.Blob{blob}
+
+	for _, blob := range blobs {
+		_, err := gethkzg4844.BlobToCommitment(blob)
+		if err != nil {
+			log.Fatalf("failed to compute commitments oof: %v", err)
+		}
+	}
+
+	blobs, commitments, proofs, versionedHashes, err := EncodeBlobsTwo(blobs)
 	if err != nil {
 		log.Fatalf("failed to compute commitments: %v", err)
 	}
+
+	// blobs, commitments, proofs, versionedHashes, err = EncodeBlobs(data)
+	// if err != nil {
+	// 	log.Fatalf("failed to compute commitments: %v", err)
+	// }
+
+	for _, blob := range blobs {
+		// print blob as if utf8
+		fmt.Printf("blob: %s\n", string(blob[:]))
+	}
+
 
 	calldataBytes, err := common.ParseHexOrString(calldata)
 	if err != nil {
@@ -151,12 +277,20 @@ func TxApp(cliCtx *cli.Context) error {
 		Sidecar:    &types.BlobTxSidecar{Blobs: blobs, Commitments: commitments, Proofs: proofs},
 	})
 	signedTx, _ := types.SignTx(tx, types.NewCancunSigner(chainId), key)
-	err = client.SendTransaction(context.Background(), signedTx)
 
-	if err != nil {
-		log.Fatalf("failed to send transaction: %v", err)
-	} else {
-		log.Printf("successfully sent transaction. txhash=%v", signedTx.Hash())
+
+	for {
+		err = client.SendTransaction(context.Background(), signedTx)
+
+		if err != nil && err.Error() == "transaction type not supported" {
+			log.Printf("waiting for cancun to activate, RPC returned `%v`...", err)
+			time.Sleep(100 * time.Millisecond)
+		} else if err != nil {
+			log.Fatalf("failed to send transaction: %v", err)
+		} else {
+			log.Printf("successfully sent transaction. txhash=%v", signedTx.Hash())
+			break
+		}
 	}
 
 	//var receipt *types.Receipt

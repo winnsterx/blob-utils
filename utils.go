@@ -32,6 +32,30 @@ func encodeBlobs(data []byte) []kzg4844.Blob {
 	return blobs
 }
 
+func EncodeBlobsTwo(blobs []kzg4844.Blob) ([]kzg4844.Blob, []kzg4844.Commitment, []kzg4844.Proof, []common.Hash, error) {
+	var (
+		commits         []kzg4844.Commitment
+		proofs          []kzg4844.Proof
+		versionedHashes []common.Hash
+	)
+	for _, blob := range blobs {
+		commit, err := kzg4844.BlobToCommitment(blob)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to compute blob commitment: %v", err)
+		}
+		commits = append(commits, commit)
+
+		proof, err := kzg4844.ComputeBlobProof(blob, commit)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("failed to compute blob proof: %v", err)
+		}
+		proofs = append(proofs, proof)
+
+		versionedHashes = append(versionedHashes, kZGToVersionedHash(commit))
+	}
+	return blobs, commits, proofs, versionedHashes, nil
+}
+
 func EncodeBlobs(data []byte) ([]kzg4844.Blob, []kzg4844.Commitment, []kzg4844.Proof, []common.Hash, error) {
 	var (
 		blobs           = encodeBlobs(data)
@@ -42,13 +66,13 @@ func EncodeBlobs(data []byte) ([]kzg4844.Blob, []kzg4844.Commitment, []kzg4844.P
 	for _, blob := range blobs {
 		commit, err := kzg4844.BlobToCommitment(blob)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, fmt.Errorf("failed to compute blob commitment: %v", err)
 		}
 		commits = append(commits, commit)
 
 		proof, err := kzg4844.ComputeBlobProof(blob, commit)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, fmt.Errorf("failed to compute blob proof: %v", err)
 		}
 		proofs = append(proofs, proof)
 

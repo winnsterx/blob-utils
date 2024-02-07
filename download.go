@@ -14,84 +14,95 @@ func init() {
 func DownloadApp(cliCtx *cli.Context) error {
 	// TODO: support downloading blobs from a beacon node.
 	return errors.New("unsupported for the latest spec")
-/*
-	addr := cliCtx.String(DownloadBeaconP2PAddr.Name)
-	slot := cliCtx.Int64(DownloadSlotFlag.Name)
+	/*
+	   addr := cliCtx.String(DownloadBeaconP2PAddr.Name)
+	   slot := cliCtx.Int64(DownloadSlotFlag.Name)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	   ctx, cancel := context.WithCancel(context.Background())
+	   defer cancel()
 
-	req := &ethpb.BlobsSidecarsByRangeRequest{
-		StartSlot: types.Slot(slot),
-		Count:     1,
-	}
+	   	req := &ethpb.BlobsSidecarsByRangeRequest{
+	   		StartSlot: types.Slot(slot),
+	   		Count:     1,
+	   	}
 
-	h, err := libp2p.New(libp2p.Transport(tcp.NewTCPTransport))
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = h.Close()
-	}()
-	// setup enough handlers so we look like a beacon peer
-	// Some clients, including lighthouse, expect a minimum set of protocols before completing
-	// a libp2p connection
-	setHandler(h, p2p.RPCPingTopicV1, pingHandler)
-	setHandler(h, p2p.RPCGoodByeTopicV1, pingHandler)
-	setHandler(h, p2p.RPCMetaDataTopicV1, pingHandler)
-	setHandler(h, p2p.RPCMetaDataTopicV2, pingHandler)
+	   h, err := libp2p.New(libp2p.Transport(tcp.NewTCPTransport))
 
-	nilHandler := func(ctx context.Context, i interface{}, stream network.Stream) error {
-		return nil
-	}
-	setHandler(h, p2p.RPCBlocksByRangeTopicV1, nilHandler)
-	setHandler(h, p2p.RPCBlocksByRangeTopicV2, nilHandler)
-	setHandler(h, p2p.RPCBlobSidecarsByRootTopicV1, nilHandler)
+	   	if err != nil {
+	   		return err
+	   	}
 
-	multiaddr, err := getMultiaddr(ctx, h, addr)
-	if err != nil {
-		return fmt.Errorf("%w: unable to get multiaddr", err)
-	}
+	   	defer func() {
+	   		_ = h.Close()
+	   	}()
 
-	addrInfo, err := peer.AddrInfoFromP2pAddr(multiaddr)
-	if err != nil {
-		return fmt.Errorf("%w: unable to get addr info", err)
-	}
+	   // setup enough handlers so we look like a beacon peer
+	   // Some clients, including lighthouse, expect a minimum set of protocols before completing
+	   // a libp2p connection
+	   setHandler(h, p2p.RPCPingTopicV1, pingHandler)
+	   setHandler(h, p2p.RPCGoodByeTopicV1, pingHandler)
+	   setHandler(h, p2p.RPCMetaDataTopicV1, pingHandler)
+	   setHandler(h, p2p.RPCMetaDataTopicV2, pingHandler)
 
-	err = h.Connect(ctx, *addrInfo)
-	if err != nil {
-		return fmt.Errorf("%w: failed to connect", err)
-	}
+	   	nilHandler := func(ctx context.Context, i interface{}, stream network.Stream) error {
+	   		return nil
+	   	}
 
-	sidecars, err := sendBlobsSidecarsByRangeRequest(ctx, h, encoder.SszNetworkEncoder{}, addrInfo.ID, req)
-	if err != nil {
-		return fmt.Errorf("%w: unable to send blobs RPC request", err)
-	}
+	   setHandler(h, p2p.RPCBlocksByRangeTopicV1, nilHandler)
+	   setHandler(h, p2p.RPCBlocksByRangeTopicV2, nilHandler)
+	   setHandler(h, p2p.RPCBlobSidecarsByRootTopicV1, nilHandler)
 
-	anyBlobs := false
-	for _, sidecar := range sidecars {
-		if int64(sidecar.Slot) != slot {
-			break
-		}
+	   multiaddr, err := getMultiaddr(ctx, h, addr)
 
-		if len(sidecar.Blob.Data) == 0 {
-			continue
-		}
+	   	if err != nil {
+	   		return fmt.Errorf("%w: unable to get multiaddr", err)
+	   	}
 
-		anyBlobs = true
-		data := DecodeBlob(sidecar.Blob.Data)
-		_, _ = os.Stdout.Write(data)
+	   addrInfo, err := peer.AddrInfoFromP2pAddr(multiaddr)
 
-		// stop after the first sidecar with blobs:
-		break
-	}
+	   	if err != nil {
+	   		return fmt.Errorf("%w: unable to get addr info", err)
+	   	}
 
-	if !anyBlobs {
-		return fmt.Errorf("no blobs found in requested slots, sidecar count: %d", len(sidecars))
-	}
-	return nil
+	   err = h.Connect(ctx, *addrInfo)
+
+	   	if err != nil {
+	   		return fmt.Errorf("%w: failed to connect", err)
+	   	}
+
+	   sidecars, err := sendBlobsSidecarsByRangeRequest(ctx, h, encoder.SszNetworkEncoder{}, addrInfo.ID, req)
+
+	   	if err != nil {
+	   		return fmt.Errorf("%w: unable to send blobs RPC request", err)
+	   	}
+
+	   anyBlobs := false
+
+	   	for _, sidecar := range sidecars {
+	   		if int64(sidecar.Slot) != slot {
+	   			break
+	   		}
+
+	   		if len(sidecar.Blob.Data) == 0 {
+	   			continue
+	   		}
+
+	   		anyBlobs = true
+	   		data := DecodeBlob(sidecar.Blob.Data)
+	   		_, _ = os.Stdout.Write(data)
+
+	   		// stop after the first sidecar with blobs:
+	   		break
+	   	}
+
+	   	if !anyBlobs {
+	   		return fmt.Errorf("no blobs found in requested slots, sidecar count: %d", len(sidecars))
+	   	}
+
+	   return nil
 	*/
 }
+
 /*
 func getMultiaddr(ctx context.Context, h host.Host, addr string) (ma.Multiaddr, error) {
 	multiaddr, err := ma.NewMultiaddr(addr)
