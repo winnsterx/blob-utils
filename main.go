@@ -3,12 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math/big"
-	"os"
+	"net/http"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -20,62 +19,130 @@ import (
 	"github.com/holiman/uint256"
 
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
-	"github.com/urfave/cli"
 )
+
+type TxArgs struct {
+    RpcUrl            string `json:"rpcUrl"` // Required
+    BlobData          string  `json:"blobData"` // Required
+    To                string  `json:"to"` // Required
+	PrivateKey        string  `json:"privateKey"` // Required
+	ChainID           string `json:"chainId"` // Required
+	GasPrice          string `json:"gasPrice"` // Required
+    Value             *string `json:"value"` // Optional, has default
+    Nonce             *int64  `json:"nonce"` // Optional, has default
+    GasLimit          *uint64 `json:"gasLimit"` // Optional, has default
+    PriorityGasPrice  *string `json:"priorityGasPrice"` // Optional, has default
+    MaxFeePerBlobGas  *string `json:"maxFeePerBlobGas"` // Optional, has default
+    Calldata          *string `json:"calldata"` // Optional, has default
+}
+
+type TxResponse struct {
+	TxHash      common.Hash `json:"txHash"`
+	BlockNumber string `json:"blockNumber"`
+}
+
+type TxResponseError struct {
+	Error string `json:"error"`
+}
+
+
+func setDefaultValues(req *TxArgs) {
+    if req.Value == nil {
+        defaultValue := "0x0"
+        req.Value = &defaultValue
+    }
+    if req.Nonce == nil {
+        defaultNonce := int64(-1)
+        req.Nonce = &defaultNonce
+    }
+    if req.GasLimit == nil {
+        defaultGasLimit := uint64(21000)
+        req.GasLimit = &defaultGasLimit
+    }
+    if req.PriorityGasPrice == nil {
+        defaultPriorityGasPrice := "2000000000"
+        req.PriorityGasPrice = &defaultPriorityGasPrice
+    }
+    if req.MaxFeePerBlobGas == nil {
+        defaultMaxFeePerBlobGas := "3000000000"
+        req.MaxFeePerBlobGas = &defaultMaxFeePerBlobGas
+    }
+
+    if req.Calldata == nil {
+        defaultCalldata := "0x"
+        req.Calldata = &defaultCalldata
+    }
+}
+
+
+func TxHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != "POST" {
+        http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+        return
+    }
+	var req TxArgs
+    err := json.NewDecoder(r.Body).Decode(&req)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+
+	setDefaultValues(&req)
+
+	TxApi(&req, &w)
+
+}
 
 
 func main() {
-	app := cli.NewApp()
-	app.Commands = []cli.Command{
-		{
-			Name:   "tx",
-			Usage:  "send a blob transaction",
-			Action: TxApp,
-			Flags:  TxFlags,
-		},
-		{
-			Name:   "download",
-			Usage:  "download blobs from the beacon net",
-			Action: DownloadApp,
-			Flags:  DownloadFlags,
-		},
-		{
-			Name:   "proof",
-			Usage:  "generate kzg proof for any input point by using jth blob polynomial",
-			Action: ProofApp,
-			Flags:  ProofFlags,
-		},
-	}
+	http.HandleFunc("/tx", TxHandler)
+    // http.HandleFunc("/download", DownloadHandler) // Implement similarly
+    // http.HandleFunc("/proof", ProofHandler)       // Implement similarly
 
-	err := app.Run(os.Args)
-	if err != nil {
-		log.Fatalf("App failed: %v", err)
-	}
+    log.Println("Server starting on port 8080...")
+    if err := http.ListenAndServe(":8080", nil); err != nil {
+        log.Fatalf("Failed to start server: %v", err)
+    }
+
 }
 
-func TxApp(cliCtx *cli.Context) error {
-	addr := cliCtx.String(TxRPCURLFlag.Name)
-	to := common.HexToAddress(cliCtx.String(TxToFlag.Name))
-	prv := cliCtx.String(TxPrivateKeyFlag.Name)
-	file := cliCtx.String(TxBlobFileFlag.Name)
-	nonce := cliCtx.Int64(TxNonceFlag.Name)
-	value := cliCtx.String(TxValueFlag.Name)
-	gasLimit := cliCtx.Uint64(TxGasLimitFlag.Name)
-	gasPrice := cliCtx.String(TxGasPriceFlag.Name)
-	priorityGasPrice := cliCtx.String(TxPriorityGasPrice.Name)
-	maxFeePerBlobGas := cliCtx.String(TxMaxFeePerBlobGas.Name)
-	chainID := cliCtx.String(TxChainID.Name)
-	calldata := cliCtx.String(TxCalldata.Name)
+
+
+
+
+func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
+	addr := txArgs.RpcUrl
+	to := common.HexToAddress(txArgs.To)
+	prv := txArgs.PrivateKey
+	blobData := txArgs.BlobData
+	gasPrice := txArgs.GasPrice
+	chainID := txArgs.ChainID
+	nonce := *txArgs.Nonce
+	value := *txArgs.Value
+	gasLimit := *txArgs.GasLimit
+	priorityGasPrice := *txArgs.PriorityGasPrice
+	maxFeePerBlobGas := *txArgs.MaxFeePerBlobGas
+	calldata := *txArgs.Calldata
+
+	// res := TxResponse{TxHash: signedTx.Hash(), BlockNumber: fmt.Sprint(receipt.BlockNumber.Int64())}
+    (*w).Header().Set("Content-Type", "application/json")
 
 	value256, err := uint256.FromHex(value)
 	if err != nil {
+		(*w).WriteHeader(http.StatusBadRequest)
+		res := TxResponseError{Error: "invalid value param"}
+		json.NewEncoder(*w).Encode(res)		
 		return fmt.Errorf("invalid value param: %v", err)
 	}
 
-	data, err := os.ReadFile(file)
-	if err != nil {
-		return fmt.Errorf("error reading blob file: %v", err)
-	}
+	data := []byte(blobData)
+	// data, err := os.ReadFile(file)
+	// if err != nil {
+	// 	(*w).WriteHeader(http.StatusBadRequest)
+	// 	res := TxResponseError{Error: "error reading blob file"}
+	// 	json.NewEncoder(*w).Encode(res)		
+	// 	return fmt.Errorf("error reading blob file: %v", err)
+	// }
 
 	chainId, _ := new(big.Int).SetString(chainID, 0)
 
@@ -87,6 +154,9 @@ func TxApp(cliCtx *cli.Context) error {
 
 	key, err := crypto.HexToECDSA(prv)
 	if err != nil {
+		(*w).WriteHeader(http.StatusBadRequest)
+		res := TxResponseError{Error: "invalid private key"}
+		json.NewEncoder(*w).Encode(res)		
 		return fmt.Errorf("%w: invalid private key", err)
 	}
 
@@ -100,6 +170,7 @@ func TxApp(cliCtx *cli.Context) error {
 
 	var gasPrice256 *uint256.Int
 	if gasPrice == "" {
+		fmt.Println("Getting suggested gas price")
 		val, err := client.SuggestGasPrice(ctx)
 		if err != nil {
 			log.Fatalf("Error getting suggested gas price: %v", err)
@@ -109,9 +180,14 @@ func TxApp(cliCtx *cli.Context) error {
 		if nok {
 			log.Fatalf("gas price is too high! got %v", val.String())
 		}
+		fmt.Println("Suggested gas price", gasPrice256)
 	} else {
 		gasPrice256, err = DecodeUint256String(gasPrice)
 		if err != nil {
+			(*w).WriteHeader(http.StatusBadRequest)
+			res := TxResponseError{Error: "invalid gas price"}
+			json.NewEncoder(*w).Encode(res)		
+	
 			return fmt.Errorf("%w: invalid gas price", err)
 		}
 	}
@@ -120,12 +196,18 @@ func TxApp(cliCtx *cli.Context) error {
 	if priorityGasPrice != "" {
 		priorityGasPrice256, err = DecodeUint256String(priorityGasPrice)
 		if err != nil {
+			(*w).WriteHeader(http.StatusBadRequest)
+			res := TxResponseError{Error: "invalid priority gas price"}
+			json.NewEncoder(*w).Encode(res)			
 			return fmt.Errorf("%w: invalid priority gas price", err)
 		}
 	}
 
 	maxFeePerBlobGas256, err := DecodeUint256String(maxFeePerBlobGas)
 	if err != nil {
+		(*w).WriteHeader(http.StatusBadRequest)
+		res := TxResponseError{Error: "invalid max fee per blob gas"}
+		json.NewEncoder(*w).Encode(res)		
 		return fmt.Errorf("%w: invalid max_fee_per_blob_gas", err)
 	}
 
@@ -263,6 +345,10 @@ func TxApp(cliCtx *cli.Context) error {
 		log.Fatalf("failed to parse calldata: %v", err)
 	}
 
+	fmt.Println("max gas fee", gasPrice256, "priority fee", priorityGasPrice256, "chain ID", 
+		uint256.MustFromBig(chainId), "nonce", uint64(nonce), gasLimit, to, value256, calldataBytes,
+		"max fee per blob", maxFeePerBlobGas256, versionedHashes)
+
 	tx := types.NewTx(&types.BlobTx{
 		ChainID:    uint256.MustFromBig(chainId),
 		Nonce:      uint64(nonce),
@@ -293,9 +379,9 @@ func TxApp(cliCtx *cli.Context) error {
 		}
 	}
 
-	//var receipt *types.Receipt
+	var receipt *types.Receipt
 	for {
-		_, err = client.TransactionReceipt(context.Background(), tx.Hash())
+		receipt, err = client.TransactionReceipt(context.Background(), signedTx.Hash())
 		if err == ethereum.NotFound {
 			time.Sleep(1 * time.Second)
 		} else if err != nil {
@@ -308,53 +394,14 @@ func TxApp(cliCtx *cli.Context) error {
 		}
 	}
 
-	log.Printf("Transaction included. nonce=%d hash=%v", nonce, tx.Hash())
-	//log.Printf("Transaction included. nonce=%d hash=%v, block=%d", nonce, tx.Hash(), receipt.BlockNumber.Int64())
-	return nil
-}
+	// log.Printf("Transaction included. nonce=%d hash=%v", nonce, signedTx.Hash())
+	log.Printf("Transaction included. nonce=%d hash=%v, block=%d", nonce, signedTx.Hash(), receipt.BlockNumber.Int64())
+	fmt.Println("receipt",receipt)
 
-func ProofApp(cliCtx *cli.Context) error {
-	file := cliCtx.String(ProofBlobFileFlag.Name)
-	blobIndex := cliCtx.Uint64(ProofBlobIndexFlag.Name)
-	inputPoint := cliCtx.String(ProofInputPointFlag.Name)
+	res := TxResponse{TxHash: signedTx.Hash(), BlockNumber: fmt.Sprint(receipt.BlockNumber.Int64())}
+    (*w).Header().Set("Content-Type", "application/json")
+	(*w).WriteHeader(http.StatusOK)
+    err = json.NewEncoder(*w).Encode(res)	
 
-	data, err := os.ReadFile(file)
-	if err != nil {
-		return fmt.Errorf("error reading blob file: %v", err)
-	}
-	blobs, commitments, _, versionedHashes, err := EncodeBlobs(data)
-	if err != nil {
-		log.Fatalf("failed to compute commitments: %v", err)
-	}
-
-	if blobIndex >= uint64(len(blobs)) {
-		return fmt.Errorf("error reading %d blob", blobIndex)
-	}
-
-	if len(inputPoint) != 64 {
-		return fmt.Errorf("wrong input point, len is %d", len(inputPoint))
-	}
-
-	var x gethkzg4844.Point
-	ip, _ := hex.DecodeString(inputPoint)
-	copy(x[:], ip)
-	proof, claimedValue, err := gethkzg4844.ComputeProof(gethkzg4844.Blob(blobs[blobIndex]), x)
-	if err != nil {
-		log.Fatalf("failed to compute proofs: %v", err)
-	}
-
-	pointEvalInput := bytes.Join(
-		[][]byte{
-			versionedHashes[blobIndex][:],
-			x[:],
-			claimedValue[:],
-			commitments[blobIndex][:],
-			proof[:],
-		},
-		[]byte{},
-	)
-	log.Printf(
-		"\nversionedHash %x \n"+"x %x \n"+"y %x \n"+"commitment %x \n"+"proof %x \n"+"pointEvalInput %x",
-		versionedHashes[blobIndex][:], x[:], claimedValue[:], commitments[blobIndex][:], proof[:], pointEvalInput[:])
 	return nil
 }
