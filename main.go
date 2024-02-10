@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/big"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -99,15 +100,17 @@ func main() {
     // http.HandleFunc("/download", DownloadHandler) // Implement similarly
     // http.HandleFunc("/proof", ProofHandler)       // Implement similarly
 
-    log.Println("Server starting on port 8080...")
-    if err := http.ListenAndServe(":8080", nil); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+		// log.Fatal("Port is empty")
+	}
+    log.Println("Server starting on port", port)
+    if err := http.ListenAndServe(":"+port, nil); err != nil {
         log.Fatalf("Failed to start server: %v", err)
     }
 
 }
-
-
-
 
 
 func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
