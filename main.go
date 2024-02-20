@@ -23,16 +23,16 @@ import (
 )
 
 type TxArgs struct {
-    RpcUrl            string `json:"rpcUrl"` // Required
+    Network            string `json:"network"` // Required
     BlobData          string  `json:"blobData"` // Required
     To                string  `json:"to"` // Required
 	PrivateKey        string  `json:"privateKey"` // Required
-	ChainID           string `json:"chainId"` // Required
-	GasPrice          string `json:"gasPrice"` // Required
+	// ChainID           string `json:"chainId"` // Required
+	GasPrice          string `json:"gasPrice"` // Optional
     Value             *string `json:"value"` // Optional, has default
     Nonce             *int64  `json:"nonce"` // Optional, has default
     GasLimit          *uint64 `json:"gasLimit"` // Optional, has default
-    PriorityGasPrice  *string `json:"priorityGasPrice"` // Optional, has default
+    PriorityGasPrice  string `json:"priorityGasPrice"` // Optional, has default
     MaxFeePerBlobGas  *string `json:"maxFeePerBlobGas"` // Optional, has default
     Calldata          *string `json:"calldata"` // Optional, has default
 }
@@ -45,6 +45,14 @@ type TxResponse struct {
 type TxResponseError struct {
 	Error string `json:"error"`
 }
+
+const (
+	sepoliaChainID = "11155111" // Sepolia Chain ID
+	goerliChainID  = "5"        // Goerli Chain ID
+	sepoliaURL     = "https://eth-sepolia.g.alchemy.com/v2/KcE8JeoEPftn8jQ_abtWr58CvpcpZ4Xq"
+	goerliURL      = "https://eth-goerli.g.alchemy.com/v2/KcE8JeoEPftn8jQ_abtWr58CvpcpZ4Xq"
+)
+
 
 
 func setDefaultValues(req *TxArgs) {
@@ -60,12 +68,13 @@ func setDefaultValues(req *TxArgs) {
         defaultGasLimit := uint64(21000)
         req.GasLimit = &defaultGasLimit
     }
-    if req.PriorityGasPrice == nil {
-        defaultPriorityGasPrice := "2000000000"
-        req.PriorityGasPrice = &defaultPriorityGasPrice
-    }
+
+	// if req.PriorityGasPrice == nil {
+    //     defaultPriorityGasPrice := ""
+    //     req.PriorityGasPrice = &defaultPriorityGasPrice
+    // }
     if req.MaxFeePerBlobGas == nil {
-        defaultMaxFeePerBlobGas := "3000000000"
+        defaultMaxFeePerBlobGas := ""
         req.MaxFeePerBlobGas = &defaultMaxFeePerBlobGas
     }
 
@@ -96,6 +105,7 @@ func TxHandler(w http.ResponseWriter, r *http.Request) {
 
 
 func main() {
+
 	http.HandleFunc("/tx", TxHandler)
     // http.HandleFunc("/download", DownloadHandler) // Implement similarly
     // http.HandleFunc("/proof", ProofHandler)       // Implement similarly
@@ -105,36 +115,39 @@ func main() {
 		port = "8080"
 		// log.Fatal("Port is empty")
 	}
-    log.Println("Server starting on port", port)
+	
+    log.Println("Server starting on port hello", port)
     if err := http.ListenAndServe(":"+port, nil); err != nil {
         log.Fatalf("Failed to start server: %v", err)
     }
 
 }
 
+func serveError(w *http.ResponseWriter, errorMsg string) {
+	(*w).Header().Set("Content-Type", "application/json")
+
+	(*w).WriteHeader(http.StatusBadRequest)
+	res := TxResponseError{Error: errorMsg}
+	json.NewEncoder(*w).Encode(res)		
+}
 
 func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
-	addr := txArgs.RpcUrl
+	network := txArgs.Network
 	to := common.HexToAddress(txArgs.To)
 	prv := txArgs.PrivateKey
 	blobData := txArgs.BlobData
 	gasPrice := txArgs.GasPrice
-	chainID := txArgs.ChainID
+	// chainID := txArgs.ChainID
 	nonce := *txArgs.Nonce
 	value := *txArgs.Value
 	gasLimit := *txArgs.GasLimit
-	priorityGasPrice := *txArgs.PriorityGasPrice
+	priorityGasPrice := txArgs.PriorityGasPrice
 	maxFeePerBlobGas := *txArgs.MaxFeePerBlobGas
 	calldata := *txArgs.Calldata
 
-	// res := TxResponse{TxHash: signedTx.Hash(), BlockNumber: fmt.Sprint(receipt.BlockNumber.Int64())}
-    (*w).Header().Set("Content-Type", "application/json")
-
 	value256, err := uint256.FromHex(value)
 	if err != nil {
-		(*w).WriteHeader(http.StatusBadRequest)
-		res := TxResponseError{Error: "invalid value param"}
-		json.NewEncoder(*w).Encode(res)		
+		serveError(w, "invalid valule param")
 		return fmt.Errorf("invalid value param: %v", err)
 	}
 
@@ -147,26 +160,36 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 	// 	return fmt.Errorf("error reading blob file: %v", err)
 	// }
 
-	chainId, _ := new(big.Int).SetString(chainID, 0)
+	// chain ID defaults to Sepolia
+	chainId, _ := new(big.Int).SetString(sepoliaChainID, 0)
 
 	ctx := context.Background()
-	client, err := ethclient.DialContext(ctx, addr)
+
+	if network == "sepolia" {
+		network = sepoliaURL
+	} else {
+		network = goerliURL
+		chainId, _ = new(big.Int).SetString(goerliChainID, 0)
+	}
+
+	client, err := ethclient.DialContext(ctx, network)
 	if err != nil {
-		log.Fatalf("Failed to connect to the Ethereum client: %v", err)
+		errorMsg := fmt.Sprintf("Failed to connect to the Ethereum client: %v", err)
+		serveError(w, errorMsg)
 	}
 
 	key, err := crypto.HexToECDSA(prv)
 	if err != nil {
-		(*w).WriteHeader(http.StatusBadRequest)
-		res := TxResponseError{Error: "invalid private key"}
-		json.NewEncoder(*w).Encode(res)		
+		errorMsg := fmt.Sprintf("invalid private key: %v", err)
+		serveError(w, errorMsg)
 		return fmt.Errorf("%w: invalid private key", err)
 	}
 
 	if nonce == -1 {
 		pendingNonce, err := client.PendingNonceAt(ctx, crypto.PubkeyToAddress(key.PublicKey))
 		if err != nil {
-			log.Fatalf("Error getting nonce: %v", err)
+			errorMsg := fmt.Sprintf("Error getting nonce: %v", err)
+			serveError(w, errorMsg)
 		}
 		nonce = int64(pendingNonce)
 	}
@@ -176,21 +199,21 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 		fmt.Println("Getting suggested gas price")
 		val, err := client.SuggestGasPrice(ctx)
 		if err != nil {
-			log.Fatalf("Error getting suggested gas price: %v", err)
+			errorMsg := fmt.Sprintf("Error getting suggested gas price: %v", err)
+			serveError(w, errorMsg)
 		}
 		var nok bool
 		gasPrice256, nok = uint256.FromBig(val)
 		if nok {
-			log.Fatalf("gas price is too high! got %v", val.String())
+			errorMsg := fmt.Sprintf("gas price is too high! got %v", val.String())
+			serveError(w, errorMsg)
 		}
 		fmt.Println("Suggested gas price", gasPrice256)
 	} else {
 		gasPrice256, err = DecodeUint256String(gasPrice)
 		if err != nil {
-			(*w).WriteHeader(http.StatusBadRequest)
-			res := TxResponseError{Error: "invalid gas price"}
-			json.NewEncoder(*w).Encode(res)		
-	
+			errorMsg := fmt.Sprintf("invalid gas price: %v", err)
+			serveError(w, errorMsg)
 			return fmt.Errorf("%w: invalid gas price", err)
 		}
 	}
@@ -199,18 +222,16 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 	if priorityGasPrice != "" {
 		priorityGasPrice256, err = DecodeUint256String(priorityGasPrice)
 		if err != nil {
-			(*w).WriteHeader(http.StatusBadRequest)
-			res := TxResponseError{Error: "invalid priority gas price"}
-			json.NewEncoder(*w).Encode(res)			
+			errorMsg := fmt.Sprintf("invalid priority gas price: %v", err)
+			serveError(w, errorMsg)
 			return fmt.Errorf("%w: invalid priority gas price", err)
 		}
 	}
 
 	maxFeePerBlobGas256, err := DecodeUint256String(maxFeePerBlobGas)
 	if err != nil {
-		(*w).WriteHeader(http.StatusBadRequest)
-		res := TxResponseError{Error: "invalid max fee per blob gas"}
-		json.NewEncoder(*w).Encode(res)		
+		errorMsg := fmt.Sprintf("invalid max_fee_per_blob_gas: %v", err)
+		serveError(w, errorMsg)
 		return fmt.Errorf("%w: invalid max_fee_per_blob_gas", err)
 	}
 
@@ -323,13 +344,17 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 	for _, blob := range blobs {
 		_, err := gethkzg4844.BlobToCommitment(blob)
 		if err != nil {
-			log.Fatalf("failed to compute commitments oof: %v", err)
+			errorMsg := fmt.Sprintf("failed to compute commitments oof: %v", err)
+			serveError(w, errorMsg)
+			return fmt.Errorf("failed to compute commitments oof: %v", err)
 		}
 	}
 
 	blobs, commitments, proofs, versionedHashes, err := EncodeBlobsTwo(blobs)
 	if err != nil {
-		log.Fatalf("failed to compute commitments: %v", err)
+		errorMsg := fmt.Sprintf("failed to compute commitments: %v", err)
+		serveError(w, errorMsg)
+		return fmt.Errorf(errorMsg)
 	}
 
 	// blobs, commitments, proofs, versionedHashes, err = EncodeBlobs(data)
@@ -345,7 +370,9 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 
 	calldataBytes, err := common.ParseHexOrString(calldata)
 	if err != nil {
-		log.Fatalf("failed to parse calldata: %v", err)
+		errorMsg := fmt.Sprintf("failed to parse calldata: %v", err)
+		serveError(w, errorMsg)
+		return fmt.Errorf(errorMsg)
 	}
 
 	fmt.Println("max gas fee", gasPrice256, "priority fee", priorityGasPrice256, "chain ID", 
@@ -375,7 +402,9 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 			log.Printf("waiting for cancun to activate, RPC returned `%v`...", err)
 			time.Sleep(100 * time.Millisecond)
 		} else if err != nil {
-			log.Fatalf("failed to send transaction: %v", err)
+			errorMsg := fmt.Sprintf("failed to send transaction: %v", err)
+			serveError(w, errorMsg)
+			return fmt.Errorf(errorMsg)
 		} else {
 			log.Printf("successfully sent transaction. txhash=%v", signedTx.Hash())
 			break
