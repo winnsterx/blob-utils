@@ -23,23 +23,23 @@ import (
 )
 
 type TxArgs struct {
-    Network            string `json:"network"` // Required
-    BlobData          string  `json:"blobData"` // Required
-    To                string  `json:"to"` // Required
-	PrivateKey        string  `json:"privateKey"` // Required
+	Network    string `json:"network"`    // Required
+	BlobData   string `json:"blobData"`   // Required
+	To         string `json:"to"`         // Required
+	PrivateKey string `json:"privateKey"` // Required
 	// ChainID           string `json:"chainId"` // Required
-	GasPrice          string `json:"gasPrice"` // Optional
-    Value             *string `json:"value"` // Optional, has default
-    Nonce             *int64  `json:"nonce"` // Optional, has default
-    GasLimit          *uint64 `json:"gasLimit"` // Optional, has default
-    PriorityGasPrice  string `json:"priorityGasPrice"` // Optional, has default
-    MaxFeePerBlobGas  *string `json:"maxFeePerBlobGas"` // Optional, has default
-    Calldata          *string `json:"calldata"` // Optional, has default
+	GasPrice         string  `json:"gasPrice"`         // Optional
+	Value            *string `json:"value"`            // Optional, has default
+	Nonce            *int64  `json:"nonce"`            // Optional, has default
+	GasLimit         *uint64 `json:"gasLimit"`         // Optional, has default
+	PriorityGasPrice string  `json:"priorityGasPrice"` // Optional, has default
+	MaxFeePerBlobGas *string `json:"maxFeePerBlobGas"` // Optional, has default
+	Calldata         *string `json:"calldata"`         // Optional, has default
 }
 
 type TxResponse struct {
 	TxHash      common.Hash `json:"txHash"`
-	BlockNumber string `json:"blockNumber"`
+	BlockNumber string      `json:"blockNumber"`
 }
 
 type TxResponseError struct {
@@ -49,53 +49,48 @@ type TxResponseError struct {
 const (
 	sepoliaChainID = "11155111" // Sepolia Chain ID
 	goerliChainID  = "5"        // Goerli Chain ID
-	sepoliaURL     = "https://eth-sepolia.g.alchemy.com/v2/KcE8JeoEPftn8jQ_abtWr58CvpcpZ4Xq"
-	goerliURL      = "https://eth-goerli.g.alchemy.com/v2/KcE8JeoEPftn8jQ_abtWr58CvpcpZ4Xq"
 )
 
-
-
 func setDefaultValues(req *TxArgs) {
-    if req.Value == nil {
-        defaultValue := "0x0"
-        req.Value = &defaultValue
-    }
-    if req.Nonce == nil {
-        defaultNonce := int64(-1)
-        req.Nonce = &defaultNonce
-    }
-    if req.GasLimit == nil {
-        defaultGasLimit := uint64(21000)
-        req.GasLimit = &defaultGasLimit
-    }
+	if req.Value == nil {
+		defaultValue := "0x0"
+		req.Value = &defaultValue
+	}
+	if req.Nonce == nil {
+		defaultNonce := int64(-1)
+		req.Nonce = &defaultNonce
+	}
+	if req.GasLimit == nil {
+		defaultGasLimit := uint64(21000)
+		req.GasLimit = &defaultGasLimit
+	}
 
 	// if req.PriorityGasPrice == nil {
-    //     defaultPriorityGasPrice := ""
-    //     req.PriorityGasPrice = &defaultPriorityGasPrice
-    // }
-    if req.MaxFeePerBlobGas == nil {
-        defaultMaxFeePerBlobGas := ""
-        req.MaxFeePerBlobGas = &defaultMaxFeePerBlobGas
-    }
+	//     defaultPriorityGasPrice := ""
+	//     req.PriorityGasPrice = &defaultPriorityGasPrice
+	// }
+	if req.MaxFeePerBlobGas == nil {
+		defaultMaxFeePerBlobGas := ""
+		req.MaxFeePerBlobGas = &defaultMaxFeePerBlobGas
+	}
 
-    if req.Calldata == nil {
-        defaultCalldata := "0x"
-        req.Calldata = &defaultCalldata
-    }
+	if req.Calldata == nil {
+		defaultCalldata := "0x"
+		req.Calldata = &defaultCalldata
+	}
 }
 
-
 func TxHandler(w http.ResponseWriter, r *http.Request) {
-    if r.Method != "POST" {
-        http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
-        return
-    }
+	if r.Method != "POST" {
+		http.Error(w, "Only POST method is allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	var req TxArgs
-    err := json.NewDecoder(r.Body).Decode(&req)
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusBadRequest)
-        return
-    }
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	setDefaultValues(&req)
 
@@ -103,23 +98,22 @@ func TxHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-
 func main() {
 
 	http.HandleFunc("/tx", TxHandler)
-    // http.HandleFunc("/download", DownloadHandler) // Implement similarly
-    // http.HandleFunc("/proof", ProofHandler)       // Implement similarly
+	// http.HandleFunc("/download", DownloadHandler) // Implement similarly
+	// http.HandleFunc("/proof", ProofHandler)       // Implement similarly
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 		// log.Fatal("Port is empty")
 	}
-	
-    log.Println("Server starting on port hello", port)
-    if err := http.ListenAndServe(":"+port, nil); err != nil {
-        log.Fatalf("Failed to start server: %v", err)
-    }
+
+	log.Println("Server starting on port hello", port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 
 }
 
@@ -128,10 +122,10 @@ func serveError(w *http.ResponseWriter, errorMsg string) {
 
 	(*w).WriteHeader(http.StatusBadRequest)
 	res := TxResponseError{Error: errorMsg}
-	json.NewEncoder(*w).Encode(res)		
+	json.NewEncoder(*w).Encode(res)
 }
 
-func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
+func TxApi(txArgs *TxArgs, w *http.ResponseWriter) error {
 	network := txArgs.Network
 	to := common.HexToAddress(txArgs.To)
 	prv := txArgs.PrivateKey
@@ -156,12 +150,14 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 	// if err != nil {
 	// 	(*w).WriteHeader(http.StatusBadRequest)
 	// 	res := TxResponseError{Error: "error reading blob file"}
-	// 	json.NewEncoder(*w).Encode(res)		
+	// 	json.NewEncoder(*w).Encode(res)
 	// 	return fmt.Errorf("error reading blob file: %v", err)
 	// }
 
 	// chain ID defaults to Sepolia
 	chainId, _ := new(big.Int).SetString(sepoliaChainID, 0)
+	sepoliaURL := "https://eth-sepolia.g.alchemy.com/v2/" + os.Getenv("ALCHEMY_API_KEY")
+	goerliURL := "https://eth-goerli.g.alchemy.com/v2/" + os.Getenv("ALCHEMY_API_KEY")
 
 	ctx := context.Background()
 
@@ -367,7 +363,6 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 		fmt.Printf("blob: %s\n", string(blob[:]))
 	}
 
-
 	calldataBytes, err := common.ParseHexOrString(calldata)
 	if err != nil {
 		errorMsg := fmt.Sprintf("failed to parse calldata: %v", err)
@@ -375,7 +370,7 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 		return fmt.Errorf(errorMsg)
 	}
 
-	fmt.Println("max gas fee", gasPrice256, "priority fee", priorityGasPrice256, "chain ID", 
+	fmt.Println("max gas fee", gasPrice256, "priority fee", priorityGasPrice256, "chain ID",
 		uint256.MustFromBig(chainId), "nonce", uint64(nonce), gasLimit, to, value256, calldataBytes,
 		"max fee per blob", maxFeePerBlobGas256, versionedHashes)
 
@@ -393,7 +388,6 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 		Sidecar:    &types.BlobTxSidecar{Blobs: blobs, Commitments: commitments, Proofs: proofs},
 	})
 	signedTx, _ := types.SignTx(tx, types.NewCancunSigner(chainId), key)
-
 
 	for {
 		err = client.SendTransaction(context.Background(), signedTx)
@@ -428,12 +422,12 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) (error) {
 
 	// log.Printf("Transaction included. nonce=%d hash=%v", nonce, signedTx.Hash())
 	log.Printf("Transaction included. nonce=%d hash=%v, block=%d", nonce, signedTx.Hash(), receipt.BlockNumber.Int64())
-	fmt.Println("receipt",receipt)
+	fmt.Println("receipt", receipt)
 
 	res := TxResponse{TxHash: signedTx.Hash(), BlockNumber: fmt.Sprint(receipt.BlockNumber.Int64())}
-    (*w).Header().Set("Content-Type", "application/json")
+	(*w).Header().Set("Content-Type", "application/json")
 	(*w).WriteHeader(http.StatusOK)
-    err = json.NewEncoder(*w).Encode(res)	
+	err = json.NewEncoder(*w).Encode(res)
 
 	return nil
 }
