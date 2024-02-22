@@ -11,7 +11,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -23,12 +22,11 @@ import (
 )
 
 type TxArgs struct {
-	Network    string `json:"network"`    // Required
-	BlobData   string `json:"blobData"`   // Required
-	To         string `json:"to"`         // Required
-	PrivateKey string `json:"privateKey"` // Required
-	// ChainID           string `json:"chainId"` // Required
+	Network          string  `json:"network"`          // Required
+	BlobData         string  `json:"blobData"`         // Required
+	To               string  `json:"to"`               // Required
 	GasPrice         string  `json:"gasPrice"`         // Optional
+	PrivateKey       *string `json:"privateKey"`       // Optional, has default
 	Value            *string `json:"value"`            // Optional, has default
 	Nonce            *int64  `json:"nonce"`            // Optional, has default
 	GasLimit         *uint64 `json:"gasLimit"`         // Optional, has default
@@ -39,7 +37,7 @@ type TxArgs struct {
 
 type TxResponse struct {
 	TxHash      common.Hash `json:"txHash"`
-	BlockNumber string      `json:"blockNumber"`
+	// BlockNumber string      `json:"blockNumber"`
 }
 
 type TxResponseError struct {
@@ -63,6 +61,11 @@ func setDefaultValues(req *TxArgs) {
 	if req.GasLimit == nil {
 		defaultGasLimit := uint64(21000)
 		req.GasLimit = &defaultGasLimit
+	}
+	if req.PrivateKey == nil {
+		privateKey := os.Getenv("PUBlIC_EOA_PRIVATE_KEY")
+		fmt.Println("privatekey", privateKey)
+		req.PrivateKey = &privateKey
 	}
 
 	// if req.PriorityGasPrice == nil {
@@ -126,9 +129,10 @@ func serveError(w *http.ResponseWriter, errorMsg string) {
 }
 
 func TxApi(txArgs *TxArgs, w *http.ResponseWriter) error {
+	fmt.Println("is pinging?")
 	network := txArgs.Network
 	to := common.HexToAddress(txArgs.To)
-	prv := txArgs.PrivateKey
+	prv := *txArgs.PrivateKey
 	blobData := txArgs.BlobData
 	gasPrice := txArgs.GasPrice
 	// chainID := txArgs.ChainID
@@ -401,33 +405,40 @@ func TxApi(txArgs *TxArgs, w *http.ResponseWriter) error {
 			return fmt.Errorf(errorMsg)
 		} else {
 			log.Printf("successfully sent transaction. txhash=%v", signedTx.Hash())
-			break
+			// break
+			res := TxResponse{TxHash: signedTx.Hash()}
+			(*w).Header().Set("Content-Type", "application/json")
+			(*w).WriteHeader(http.StatusOK)
+			err = json.NewEncoder(*w).Encode(res)
+			
+			return nil
+		
 		}
 	}
 
-	var receipt *types.Receipt
-	for {
-		receipt, err = client.TransactionReceipt(context.Background(), signedTx.Hash())
-		if err == ethereum.NotFound {
-			time.Sleep(1 * time.Second)
-		} else if err != nil {
-			if _, ok := err.(*json.UnmarshalTypeError); ok {
-				// TODO: ignore other errors for now. Some clients are treating the blobGasUsed as big.Int rather than uint64
-				break
-			}
-		} else {
-			break
-		}
-	}
+	// var receipt *types.Receipt
+	// for {
+	// 	receipt, err = client.TransactionReceipt(context.Background(), signedTx.Hash())
+	// 	if err == ethereum.NotFound {
+	// 		time.Sleep(1 * time.Second)
+	// 	} else if err != nil {
+	// 		if _, ok := err.(*json.UnmarshalTypeError); ok {
+	// 			// TODO: ignore other errors for now. Some clients are treating the blobGasUsed as big.Int rather than uint64
+	// 			break
+	// 		}
+	// 	} else {
+	// 		break
+	// 	}
+	// }
 
-	// log.Printf("Transaction included. nonce=%d hash=%v", nonce, signedTx.Hash())
-	log.Printf("Transaction included. nonce=%d hash=%v, block=%d", nonce, signedTx.Hash(), receipt.BlockNumber.Int64())
-	fmt.Println("receipt", receipt)
+	// // log.Printf("Transaction included. nonce=%d hash=%v", nonce, signedTx.Hash())
+	// log.Printf("Transaction included. nonce=%d hash=%v, block=%d", nonce, signedTx.Hash(), receipt.BlockNumber.Int64())
+	// fmt.Println("receipt", receipt)
 
-	res := TxResponse{TxHash: signedTx.Hash(), BlockNumber: fmt.Sprint(receipt.BlockNumber.Int64())}
-	(*w).Header().Set("Content-Type", "application/json")
-	(*w).WriteHeader(http.StatusOK)
-	err = json.NewEncoder(*w).Encode(res)
+	// res := TxResponse{TxHash: signedTx.Hash(), BlockNumber: fmt.Sprint(receipt.BlockNumber.Int64())}
+	// (*w).Header().Set("Content-Type", "application/json")
+	// (*w).WriteHeader(http.StatusOK)
+	// err = json.NewEncoder(*w).Encode(res)
 
-	return nil
+	// return nil
 }
